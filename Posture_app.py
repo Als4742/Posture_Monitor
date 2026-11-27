@@ -19,13 +19,13 @@ import cv2
 import mediapipe as mp
 
 from posture_metrics import compute_indicators
-from posture_logic import (MESSAGES, SENSITIVITY_NAME, Smoother, default_baseline,
-                           deviations, make_baseline, problems)
+from posture_logic import (ISSUE_LABELS, MESSAGES, SENSITIVITY_NAME, Smoother, default_baseline,
+                           deviations, make_baseline, problems, worst_problem)
 
 # ---- Settings ---------------------------------------------------------------
 CALIBRATION_SECONDS = 5
 TIMING = {
-    "DEMO": {"bad": 3, "cooldown": 15},      # quick, for demonstrations
+    "DEMO": {"bad": 3, "cooldown": 8},       # quick, for demonstrations
     "REAL": {"bad": 30, "cooldown": 900},    # survey: most want 15 to 30 minutes between reminders
 }
 NUDGE_SHOWN_SECONDS = 6
@@ -79,6 +79,7 @@ class PostureApp:
         self.last_nudge = -1e9
         self.nudge_text = ""
         self.nudge_until = 0.0
+        self.issue = None
         self.rendered_key = None
         self.prog_canvas = self.prog_fill = self.prog_label = None
         self._render_pending = False
@@ -218,9 +219,12 @@ class PostureApp:
             self.sub = DRIFTING if self.bad_since is not None else GOOD_S
         if self.state == CALIBRATING:
             self.update_progress(now)
-        key = (self.state, self.sub, self.message, self.nudge_text if self.sub == NUDGE else "")
-        if key != self.rendered_key:
+        if self.render_key() != self.rendered_key:
             self.render()
+
+    def render_key(self):
+        issue = self.issue if self.state == MONITORING and self.sub in (DRIFTING, NUDGE) else None
+        return (self.state, self.sub, self.message, self.nudge_text if self.sub == NUDGE else "", issue)
 
     def step_calibration(self, ind, now):
         if ind:
@@ -252,18 +256,20 @@ class PostureApp:
         dev = deviations(self.smoother.add(ind), self.baseline)
         bad = problems(dev, self.level.get())
         if bad:
+            self.issue = worst_problem(dev, self.level.get())
             if self.bad_since is None:
                 self.bad_since = now
             if self.sub != NUDGE:
                 self.sub = DRIFTING
             timing = TIMING[self.mode.get()]
             if now - self.bad_since >= timing["bad"] and now - self.last_nudge >= timing["cooldown"]:
-                self.nudge_text = MESSAGES[bad[0]]
+                self.nudge_text = MESSAGES[self.issue]
                 self.nudge_until = now + NUDGE_SHOWN_SECONDS
                 self.last_nudge = now
                 self.sub = NUDGE
         else:
             self.bad_since = None
+            self.issue = None
             self.sub = GOOD_S
 
     def camera_lost(self):
@@ -425,8 +431,7 @@ class PostureApp:
         for child in self.content.winfo_children():
             child.destroy()
         self.prog_canvas = self.prog_fill = self.prog_label = None
-        self.rendered_key = (self.state, self.sub, self.message,
-                             self.nudge_text if self.sub == NUDGE else "")
+        self.rendered_key = self.render_key()
 
         if self.state == PRIVACY:
             self.set_chip("Camera: off", NEUTRAL)
@@ -492,6 +497,9 @@ class PostureApp:
                     anchor="w", padx=12, pady=(8, 0))
                 self.label(banner, "Shown in this window only: no pop-up, no sound.", 8,
                            fg=QUIET, bg=ACCENT_TINT).pack(anchor="w", padx=12, pady=(0, 8))
+                if self.issue:
+                    self.label(self.content, "What is off: " + ISSUE_LABELS[self.issue], 9,
+                               fg=WARN).pack(anchor="w", pady=(0, 2))
                 self.label(self.content, summary, 9, fg=QUIET).pack(anchor="w")
                 self.button_row([("Pause (P)", self.on_pause, False),
                                  ("Recalibrate", self.on_calibrate, False)])
@@ -500,6 +508,9 @@ class PostureApp:
                     self.status_card("Good posture", GOOD, GOOD_TINT)
                 else:
                     self.status_card("Drifting from your baseline", WARN, WARN_TINT)
+                    if self.issue:
+                        self.label(self.content, "What is off: " + ISSUE_LABELS[self.issue], 9,
+                                   fg=WARN).pack(anchor="w", pady=(0, 6))
                 self.segmented("Sensitivity", self.level,
                                [(SENSITIVITY_NAME[i], i) for i in (1, 2, 3)])
                 self.segmented("Mode", self.mode, [("Demo", "DEMO"), ("Real", "REAL")])

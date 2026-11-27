@@ -32,6 +32,16 @@ MESSAGES = {
 }
 
 
+# Short descriptions shown on screen so the student can see what is off.
+ISSUE_LABELS = {
+    "head_bend": "head bent forward",
+    "head_drop": "head sinking toward the shoulders",
+    "lean_in": "leaning toward the screen",
+    "shoulder_tilt": "shoulders uneven",
+    "head_tilt": "head tilted sideways",
+}
+
+
 def make_baseline(samples):
     """Median of each indicator over the calibration samples (robust to small jitters)."""
     if len(samples) < 20:
@@ -82,6 +92,13 @@ def problems(dev, level=2):
     """Names of the indicators that exceed their (sensitivity-scaled) threshold."""
     lim = limits(level)
     return [name for name in BASE_THRESHOLDS if name in dev and dev[name] > lim[name]]
+
+
+def worst_problem(dev, level=2):
+    """The problem that exceeds its limit by the largest factor, or None if all are within limits."""
+    lim = limits(level)
+    bad = problems(dev, level)
+    return max(bad, key=lambda name: dev[name] / lim[name]) if bad else None
 
 
 class Smoother:
