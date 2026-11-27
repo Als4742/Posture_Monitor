@@ -50,14 +50,23 @@ def make_baseline(samples):
     return base
 
 
+def default_baseline():
+    """Used when the student skips calibration. Only the tilt checks can work without a personal
+    baseline, so the other values are left empty and those checks are skipped."""
+    return {"shoulder_tilt_deg": 0.0, "head_tilt_deg": 0.0, "head_height_ratio": None,
+            "distance_proxy": None, "head_pitch": None}
+
+
 def deviations(ind, base):
     """Positive numbers mean 'worse than baseline'. A check is left out if its data is missing."""
     dev = {
-        "head_drop": (base["head_height_ratio"] - ind["head_height_ratio"]) / base["head_height_ratio"],
-        "lean_in": (ind["distance_proxy"] - base["distance_proxy"]) / base["distance_proxy"],
         "shoulder_tilt": ind["shoulder_tilt_deg"] - base["shoulder_tilt_deg"],
         "head_tilt": ind["head_tilt_deg"] - base["head_tilt_deg"],
     }
+    if base.get("head_height_ratio") and ind.get("head_height_ratio") is not None:
+        dev["head_drop"] = (base["head_height_ratio"] - ind["head_height_ratio"]) / base["head_height_ratio"]
+    if base.get("distance_proxy") and ind.get("distance_proxy") is not None:
+        dev["lean_in"] = (ind["distance_proxy"] - base["distance_proxy"]) / base["distance_proxy"]
     if ind.get("head_pitch") is not None and base.get("head_pitch") is not None:
         dev["head_bend"] = ind["head_pitch"] - base["head_pitch"]
     return dev
